@@ -1,6 +1,9 @@
 ﻿using System;
-using System.Diagnostics;
 using UnityEngine;
+
+// Unity namespace’lerini sabitle
+using Debug = UnityEngine.Debug;
+using Random = UnityEngine.Random;
 
 [ExecuteAlways]
 public class AutoForestGenerator : MonoBehaviour
@@ -20,10 +23,6 @@ public class AutoForestGenerator : MonoBehaviour
     [Range(0f, 1f)] public float minHeight = 0.2f;
     [Range(0f, 1f)] public float maxHeight = 0.8f;
     [Range(0f, 60f)] public float maxSlope = 35f;
-
-    // =======================
-    // CONTEXT MENU
-    // =======================
 
     [ContextMenu("Generate Forest")]
     public void GenerateForest()
@@ -63,10 +62,6 @@ public class AutoForestGenerator : MonoBehaviour
         ClearForest();
         GenerateForest();
     }
-
-    // =======================
-    // INTERNAL
-    // =======================
 
     void SpawnObjects(
         GameObject[] prefabs,

@@ -33,6 +33,10 @@ public class AutoForestGenerator : MonoBehaviour
     [Header("Cluster Radius")]
     public float clusterRadius = 40f;
 
+    [Header("Cluster Density")]
+    [Range(0f, 1f)]
+    public float clusterEdgeFalloff = 1f;
+
     // Sadece merkez noktaları tutulur
     private readonly System.Collections.Generic.List<Vector3> clusterCenters
         = new System.Collections.Generic.List<Vector3>();
@@ -136,6 +140,32 @@ public class AutoForestGenerator : MonoBehaviour
                 return true;
         }
         return false;
+    }
+
+    // =======================
+    // CLUSTER DENSITY / FALLOFF
+    // =======================
+    float GetClusterWeight(Vector3 worldPos)
+    {
+        float bestWeight = 0f;
+
+        for (int i = 0; i < clusterCenters.Count; i++)
+        {
+            float dist = Vector3.Distance(worldPos, clusterCenters[i]);
+            if (dist > clusterRadius)
+                continue;
+
+            float t = dist / clusterRadius;
+            float weight = 1f - Mathf.Clamp01(t);
+
+            // Falloff eğrisi (şimdilik linear = 1)
+            weight = Mathf.Pow(weight, clusterEdgeFalloff);
+
+            if (weight > bestWeight)
+                bestWeight = weight;
+        }
+
+        return bestWeight;
     }
 
     // =======================

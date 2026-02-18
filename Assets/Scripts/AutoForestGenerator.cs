@@ -1,7 +1,6 @@
 ﻿using System;
 using UnityEngine;
 
-// Unity namespace’lerini sabitle
 using Debug = UnityEngine.Debug;
 using Random = UnityEngine.Random;
 
@@ -19,238 +18,172 @@ public class AutoForestGenerator : MonoBehaviour
     public int treeCount = 2000;
     public int bushCount = 3000;
 
+    // =======================
+    // SPAWN DENSITY BOOST
+    // =======================
+    [Header("Spawn Density Boost")]
+    [Range(1f, 20f)] public float treeSpawnMultiplier = 6f;
+    [Range(1f, 20f)] public float bushSpawnMultiplier = 12f;
+
+    // =======================
+    // MINIMUM CLUSTER SPAWN
+    // =======================
+    [Header("Minimum Cluster Spawn")]
+    [Range(0f, 1f)] public float minTreeClusterWeight = 0.25f;
+    [Range(0f, 1f)] public float minBushClusterWeight = 0.45f;
+
     [Header("Placement Rules")]
     [Range(0f, 1f)] public float minHeight = 0.2f;
     [Range(0f, 1f)] public float maxHeight = 0.8f;
     [Range(0f, 60f)] public float maxSlope = 35f;
 
-    // =======================
-    // CLUSTER SETTINGS
-    // =======================
     [Header("Cluster Settings")]
     public int clusterCount = 12;
-
-    [Header("Cluster Radius")]
     public float clusterRadius = 40f;
+    [Range(0f, 1f)] public float clusterEdgeFalloff = 1f;
 
-    [Header("Cluster Density")]
-    [Range(0f, 1f)]
-    public float clusterEdgeFalloff = 1f;
-
-    // =======================
-    // GAMEPLAY SAFE ZONES
-    // =======================
     [Header("Gameplay Safe Zones")]
     public Vector3[] safeZoneCenters;
     public float safeZoneRadius = 15f;
 
-    // =======================
-    // PATH / ROAD SAFE ZONES
-    // =======================
     [Header("Path / Road Safe Zones")]
     public Vector3[] pathPoints;
     public float pathRadius = 10f;
 
-    // =======================
-    // PERFORMANCE
-    // =======================
     [Header("Performance")]
-    public Transform viewer;              // Camera / Player
+    public Transform viewer;
     public float maxSpawnDistance = 300f;
 
-    private readonly System.Collections.Generic.List<Vector3> clusterCenters
-        = new System.Collections.Generic.List<Vector3>();
+    private readonly System.Collections.Generic.List<Vector3> clusterCenters = new();
 
     [ContextMenu("Generate Forest")]
     public void GenerateForest()
     {
-        if (terrain == null)
-        {
-            Debug.LogError("Terrain atanmamış!");
-            return;
-        }
+        if (terrain == null) return;
 
         ClearForest();
 
-        TerrainData data = terrain.terrainData;
-        Vector3 terrainSize = data.size;
-        Vector3 terrainPos = terrain.transform.position;
+        var data = terrain.terrainData;
+        var size = data.size;
+        var pos = terrain.transform.position;
 
-        GenerateClusterCenters(data, terrainSize, terrainPos);
+        GenerateClusterCenters(data, size, pos);
 
-        SpawnObjects(treePrefabs, treeCount, terrainSize, terrainPos, data);
-        SpawnObjects(bushPrefabs, bushCount, terrainSize, terrainPos, data);
+        SpawnObjects(treePrefabs,
+            Mathf.RoundToInt(treeCount * treeSpawnMultiplier),
+            size, pos, data, false);
 
-        Debug.Log("Forest generated");
+        SpawnObjects(bushPrefabs,
+            Mathf.RoundToInt(bushCount * bushSpawnMultiplier),
+            size, pos, data, true);
     }
 
     [ContextMenu("Clear Forest")]
     public void ClearForest()
     {
         for (int i = transform.childCount - 1; i >= 0; i--)
-        {
             DestroyImmediate(transform.GetChild(i).gameObject);
-        }
-        Debug.Log("Forest cleared");
     }
 
-    [ContextMenu("Rebuild Forest")]
-    public void RebuildForest()
-    {
-        ClearForest();
-        GenerateForest();
-    }
-
-    // =======================
-    // CLUSTER CENTER LOGIC
-    // =======================
-    void GenerateClusterCenters(TerrainData data, Vector3 terrainSize, Vector3 terrainPos)
+    void GenerateClusterCenters(TerrainData data, Vector3 size, Vector3 pos)
     {
         clusterCenters.Clear();
-
         int safety = 0;
-        int maxAttempts = clusterCount * 10;
 
-        while (clusterCenters.Count < clusterCount && safety < maxAttempts)
+        while (clusterCenters.Count < clusterCount && safety++ < clusterCount * 20)
         {
-            safety++;
+            float x = Random.Range(0f, size.x);
+            float z = Random.Range(0f, size.z);
 
-            float x = Random.Range(0f, terrainSize.x);
-            float z = Random.Range(0f, terrainSize.z);
+            float nx = x / size.x;
+            float nz = z / size.z;
 
-            float nx = x / terrainSize.x;
-            float nz = z / terrainSize.z;
-
-            float h01 = data.GetInterpolatedHeight(nx, nz) / terrainSize.y;
+            float h01 = data.GetInterpolatedHeight(nx, nz) / size.y;
             if (h01 < minHeight || h01 > maxHeight) continue;
+            if (data.GetSteepness(nx, nz) > maxSlope) continue;
 
-            float slope = data.GetSteepness(nx, nz);
-            if (slope > maxSlope) continue;
-
-            Vector3 worldPos = new Vector3(
-                terrainPos.x + x,
-                terrainPos.y + data.GetInterpolatedHeight(nx, nz),
-                terrainPos.z + z
-            );
-
-            clusterCenters.Add(worldPos);
+            clusterCenters.Add(new Vector3(
+                pos.x + x,
+                pos.y + data.GetInterpolatedHeight(nx, nz),
+                pos.z + z
+            ));
         }
-
-        Debug.Log($"Cluster centers generated: {clusterCenters.Count}");
     }
 
-    // =======================
-    // CLUSTER DENSITY
-    // =======================
-    float GetClusterWeight(Vector3 worldPos)
+    float GetClusterWeight(Vector3 p)
     {
         float best = 0f;
-
-        for (int i = 0; i < clusterCenters.Count; i++)
+        foreach (var c in clusterCenters)
         {
-            float d = Vector3.Distance(worldPos, clusterCenters[i]);
+            float d = Vector3.Distance(p, c);
             if (d > clusterRadius) continue;
 
-            float t = d / clusterRadius;
-            float w = 1f - Mathf.Clamp01(t);
+            float w = 1f - Mathf.Clamp01(d / clusterRadius);
             w = Mathf.Pow(w, clusterEdgeFalloff);
-
             if (w > best) best = w;
         }
         return best;
     }
 
-    // =======================
-    // SAFE ZONE
-    // =======================
-    bool IsInsideSafeZone(Vector3 worldPos)
-    {
-        if (safeZoneCenters == null || safeZoneCenters.Length == 0)
-            return false;
-
-        for (int i = 0; i < safeZoneCenters.Length; i++)
-        {
-            if (Vector3.Distance(worldPos, safeZoneCenters[i]) <= safeZoneRadius)
-                return true;
-        }
-        return false;
-    }
-
-    // =======================
-    // PATH
-    // =======================
-    bool IsInsidePath(Vector3 worldPos)
-    {
-        if (pathPoints == null || pathPoints.Length == 0)
-            return false;
-
-        for (int i = 0; i < pathPoints.Length; i++)
-        {
-            if (Vector3.Distance(worldPos, pathPoints[i]) <= pathRadius)
-                return true;
-        }
-        return false;
-    }
-
-    // =======================
-    // DISTANCE CULLING
-    // =======================
-    bool IsWithinSpawnDistance(Vector3 worldPos)
-    {
-        if (viewer == null)
-            return true; // geri uyumluluk
-
-        return Vector3.Distance(viewer.position, worldPos) <= maxSpawnDistance;
-    }
-
-    // =======================
-    // SPAWN SYSTEM (OPTIMIZED)
-    // =======================
     void SpawnObjects(
         GameObject[] prefabs,
         int count,
-        Vector3 terrainSize,
-        Vector3 terrainPos,
-        TerrainData data)
+        Vector3 size,
+        Vector3 pos,
+        TerrainData data,
+        bool isBush)
     {
         if (prefabs == null || prefabs.Length == 0) return;
 
         for (int i = 0; i < count; i++)
         {
-            float x = Random.Range(0f, terrainSize.x);
-            float z = Random.Range(0f, terrainSize.z);
+            float x = Random.Range(0f, size.x);
+            float z = Random.Range(0f, size.z);
 
-            float nx = x / terrainSize.x;
-            float nz = z / terrainSize.z;
+            float nx = x / size.x;
+            float nz = z / size.z;
 
-            float h01 = data.GetInterpolatedHeight(nx, nz) / terrainSize.y;
-            if (h01 < minHeight || h01 > maxHeight) continue;
+            if (data.GetSteepness(nx, nz) > maxSlope) continue;
 
-            float slope = data.GetSteepness(nx, nz);
-            if (slope > maxSlope) continue;
-
-            Vector3 worldPos = new Vector3(
-                terrainPos.x + x,
-                terrainPos.y + data.GetInterpolatedHeight(nx, nz),
-                terrainPos.z + z
+            Vector3 worldPos = new(
+                pos.x + x,
+                pos.y + data.GetInterpolatedHeight(nx, nz),
+                pos.z + z
             );
 
-            // 🚀 DISTANCE CULLING
-            if (!IsWithinSpawnDistance(worldPos)) continue;
+            if (viewer && Vector3.Distance(viewer.position, worldPos) > maxSpawnDistance) continue;
+            if (IsInsideSafeZone(worldPos) || IsInsidePath(worldPos)) continue;
 
-            // 🚫 SAFE ZONE
-            if (IsInsideSafeZone(worldPos)) continue;
-
-            // 🛣️ PATH
-            if (IsInsidePath(worldPos)) continue;
-
-            // 🌲 CLUSTER GATE
             float weight = GetClusterWeight(worldPos);
-            if (Random.value > weight) continue;
+            float finalWeight = Mathf.Max(
+                weight,
+                isBush ? minBushClusterWeight : minTreeClusterWeight
+            );
 
-            GameObject prefab = prefabs[Random.Range(0, prefabs.Length)];
-            GameObject obj = Instantiate(prefab, worldPos, Quaternion.identity, transform);
-            obj.transform.Rotate(0f, Random.Range(0f, 360f), 0f);
+            if (Random.value > finalWeight) continue;
+
+            Instantiate(
+                prefabs[Random.Range(0, prefabs.Length)],
+                worldPos,
+                Quaternion.Euler(0f, Random.Range(0f, 360f), 0f),
+                transform
+            );
         }
+    }
+
+    bool IsInsideSafeZone(Vector3 p)
+    {
+        if (safeZoneCenters == null) return false;
+        foreach (var c in safeZoneCenters)
+            if (Vector3.Distance(p, c) <= safeZoneRadius) return true;
+        return false;
+    }
+
+    bool IsInsidePath(Vector3 p)
+    {
+        if (pathPoints == null) return false;
+        foreach (var c in pathPoints)
+            if (Vector3.Distance(p, c) <= pathRadius) return true;
+        return false;
     }
 }

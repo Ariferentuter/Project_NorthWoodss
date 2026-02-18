@@ -44,6 +44,13 @@ public class AutoForestGenerator : MonoBehaviour
     public Vector3[] safeZoneCenters;
     public float safeZoneRadius = 15f;
 
+    // =======================
+    // PATH / ROAD SAFE ZONES
+    // =======================
+    [Header("Path / Road Safe Zones")]
+    public Vector3[] pathPoints;
+    public float pathRadius = 10f;
+
     private readonly System.Collections.Generic.List<Vector3> clusterCenters
         = new System.Collections.Generic.List<Vector3>();
 
@@ -163,6 +170,22 @@ public class AutoForestGenerator : MonoBehaviour
     }
 
     // =======================
+    // PATH CHECK
+    // =======================
+    bool IsInsidePath(Vector3 worldPos)
+    {
+        if (pathPoints == null || pathPoints.Length == 0)
+            return false;
+
+        for (int i = 0; i < pathPoints.Length; i++)
+        {
+            if (Vector3.Distance(worldPos, pathPoints[i]) <= pathRadius)
+                return true;
+        }
+        return false;
+    }
+
+    // =======================
     // SPAWN SYSTEM (GATED)
     // =======================
     void SpawnObjects(
@@ -196,6 +219,9 @@ public class AutoForestGenerator : MonoBehaviour
 
             // 🚫 GAMEPLAY SAFE ZONE – MUTLAK YASAK
             if (IsInsideSafeZone(worldPos)) continue;
+
+            // 🛣️ PATH / ROAD – MUTLAK YASAK
+            if (IsInsidePath(worldPos)) continue;
 
             // 🌲 CLUSTER PROBABILITY GATE
             float weight = GetClusterWeight(worldPos);

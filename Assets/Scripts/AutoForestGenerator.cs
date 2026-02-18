@@ -24,6 +24,19 @@ public class AutoForestGenerator : MonoBehaviour
     [Range(0f, 1f)] public float maxHeight = 0.8f;
     [Range(0f, 60f)] public float maxSlope = 35f;
 
+    // =======================
+    // CLUSTER SETTINGS
+    // =======================
+    [Header("Cluster Settings")]
+    public int clusterCount = 12;
+
+    [Header("Cluster Radius")]
+    public float clusterRadius = 40f;
+
+    // Sadece merkez noktaları tutulur
+    private readonly System.Collections.Generic.List<Vector3> clusterCenters
+        = new System.Collections.Generic.List<Vector3>();
+
     [ContextMenu("Generate Forest")]
     public void GenerateForest()
     {
@@ -39,6 +52,10 @@ public class AutoForestGenerator : MonoBehaviour
         Vector3 terrainSize = data.size;
         Vector3 terrainPos = terrain.transform.position;
 
+        // 🔹 SADECE CLUSTER MERKEZLERİ
+        GenerateClusterCenters(data, terrainSize, terrainPos);
+
+        // 🔹 MEVCUT SPAWN SİSTEMİ – DOKUNULMADI
         SpawnObjects(treePrefabs, treeCount, terrainSize, terrainPos, data);
         SpawnObjects(bushPrefabs, bushCount, terrainSize, terrainPos, data);
 
@@ -63,6 +80,79 @@ public class AutoForestGenerator : MonoBehaviour
         GenerateForest();
     }
 
+    // =======================
+    // CLUSTER CENTER LOGIC
+    // =======================
+    void GenerateClusterCenters(
+        TerrainData data,
+        Vector3 terrainSize,
+        Vector3 terrainPos)
+    {
+        clusterCenters.Clear();
+
+        int safety = 0;
+        int maxAttempts = clusterCount * 10;
+
+        while (clusterCenters.Count < clusterCount && safety < maxAttempts)
+        {
+            safety++;
+
+            float x = Random.Range(0f, terrainSize.x);
+            float z = Random.Range(0f, terrainSize.z);
+
+            float normX = x / terrainSize.x;
+            float normZ = z / terrainSize.z;
+
+            float height01 = data.GetInterpolatedHeight(normX, normZ) / terrainSize.y;
+            if (height01 < minHeight || height01 > maxHeight)
+                continue;
+
+            float slope = data.GetSteepness(normX, normZ);
+            if (slope > maxSlope)
+                continue;
+
+            float y = data.GetInterpolatedHeight(normX, normZ);
+
+            Vector3 worldPos = new Vector3(
+                terrainPos.x + x,
+                terrainPos.y + y,
+                terrainPos.z + z
+            );
+
+            clusterCenters.Add(worldPos);
+        }
+
+        Debug.Log($"Cluster centers generated: {clusterCenters.Count}");
+    }
+
+    // =======================
+    // CLUSTER INFLUENCE CHECK
+    // =======================
+    bool IsInsideAnyCluster(Vector3 worldPos)
+    {
+        for (int i = 0; i < clusterCenters.Count; i++)
+        {
+            if (Vector3.Distance(worldPos, clusterCenters[i]) <= clusterRadius)
+                return true;
+        }
+        return false;
+    }
+
+    // =======================
+    // DEBUG GIZMOS (EDITOR)
+    // =======================
+    void OnDrawGizmosSelected()
+    {
+        Gizmos.color = Color.green;
+        for (int i = 0; i < clusterCenters.Count; i++)
+        {
+            Gizmos.DrawWireSphere(clusterCenters[i], clusterRadius);
+        }
+    }
+
+    // =======================
+    // EXISTING SPAWN SYSTEM
+    // =======================
     void SpawnObjects(
         GameObject[] prefabs,
         int count,

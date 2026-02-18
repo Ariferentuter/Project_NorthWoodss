@@ -51,6 +51,13 @@ public class AutoForestGenerator : MonoBehaviour
     public Vector3[] pathPoints;
     public float pathRadius = 10f;
 
+    // =======================
+    // PERFORMANCE
+    // =======================
+    [Header("Performance")]
+    public Transform viewer;              // Camera / Player
+    public float maxSpawnDistance = 300f;
+
     private readonly System.Collections.Generic.List<Vector3> clusterCenters
         = new System.Collections.Generic.List<Vector3>();
 
@@ -133,7 +140,7 @@ public class AutoForestGenerator : MonoBehaviour
     }
 
     // =======================
-    // CLUSTER DENSITY / FALLOFF
+    // CLUSTER DENSITY
     // =======================
     float GetClusterWeight(Vector3 worldPos)
     {
@@ -154,7 +161,7 @@ public class AutoForestGenerator : MonoBehaviour
     }
 
     // =======================
-    // SAFE ZONE CHECK
+    // SAFE ZONE
     // =======================
     bool IsInsideSafeZone(Vector3 worldPos)
     {
@@ -170,7 +177,7 @@ public class AutoForestGenerator : MonoBehaviour
     }
 
     // =======================
-    // PATH CHECK
+    // PATH
     // =======================
     bool IsInsidePath(Vector3 worldPos)
     {
@@ -186,7 +193,18 @@ public class AutoForestGenerator : MonoBehaviour
     }
 
     // =======================
-    // SPAWN SYSTEM (GATED)
+    // DISTANCE CULLING
+    // =======================
+    bool IsWithinSpawnDistance(Vector3 worldPos)
+    {
+        if (viewer == null)
+            return true; // geri uyumluluk
+
+        return Vector3.Distance(viewer.position, worldPos) <= maxSpawnDistance;
+    }
+
+    // =======================
+    // SPAWN SYSTEM (OPTIMIZED)
     // =======================
     void SpawnObjects(
         GameObject[] prefabs,
@@ -217,13 +235,16 @@ public class AutoForestGenerator : MonoBehaviour
                 terrainPos.z + z
             );
 
-            // 🚫 GAMEPLAY SAFE ZONE – MUTLAK YASAK
+            // 🚀 DISTANCE CULLING
+            if (!IsWithinSpawnDistance(worldPos)) continue;
+
+            // 🚫 SAFE ZONE
             if (IsInsideSafeZone(worldPos)) continue;
 
-            // 🛣️ PATH / ROAD – MUTLAK YASAK
+            // 🛣️ PATH
             if (IsInsidePath(worldPos)) continue;
 
-            // 🌲 CLUSTER PROBABILITY GATE
+            // 🌲 CLUSTER GATE
             float weight = GetClusterWeight(worldPos);
             if (Random.value > weight) continue;
 

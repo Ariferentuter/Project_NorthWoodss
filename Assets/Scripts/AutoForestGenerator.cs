@@ -14,45 +14,55 @@ public class AutoForestGenerator : MonoBehaviour
     public GameObject[] treePrefabs;
     public GameObject[] bushPrefabs;
 
-    [Header("Counts")]
-    public int treeCount = 2000;
-    public int bushCount = 3000;
+    [Header("Base Counts")]
+    public int treeCount = 3000;   // 🔥 ARTIRILDI
+    public int bushCount = 5000;   // 🔥 ARTIRILDI
 
     // =======================
-    // SPAWN DENSITY BOOST
+    // SPAWN MULTIPLIERS
     // =======================
-    [Header("Spawn Density Boost")]
-    [Range(1f, 20f)] public float treeSpawnMultiplier = 6f;
-    [Range(1f, 20f)] public float bushSpawnMultiplier = 12f;
+    [Header("Spawn Multipliers")]
+    [Range(1f, 30f)] public float treeSpawnMultiplier = 15f;   // 🔥 ÇOK YOĞUN
+    [Range(1f, 30f)] public float bushSpawnMultiplier = 20f;   // 🔥 ÇOK YOĞUN
 
     // =======================
-    // MINIMUM CLUSTER SPAWN
+    // EXTRA PASSES
     // =======================
-    [Header("Minimum Cluster Spawn")]
-    [Range(0f, 1f)] public float minTreeClusterWeight = 0.25f;
-    [Range(0f, 1f)] public float minBushClusterWeight = 0.45f;
+    [Header("Extra Passes")]
+    [Range(1, 10)] public int treeSpawnPasses = 5;   // 🔥 AĞAÇ DOLDURUR
+    [Range(1, 10)] public int bushSpawnPasses = 3;   // 🔥 ÇALI DOLDURUR
+
+    // =======================
+    // MINIMUM SPAWN (TABAN)
+    // =======================
+    [Header("Minimum Spawn Chance")]
+    [Range(0f, 1f)] public float minTreeClusterWeight = 0.9f;  // 🔥 NEREDEYSE GARANTİ
+    [Range(0f, 1f)] public float minBushClusterWeight = 0.85f;
+
+    // =======================
+    // HEIGHT DISTRIBUTION
+    // =======================
+    [Header("Height Distribution")]
+    [Range(0f, 1f)] public float preferredHeightCenter = 0.55f;
+    [Range(0f, 0.6f)] public float preferredHeightRange = 0.45f; // 🔥 ÇOK GENİŞ
 
     [Header("Placement Rules")]
-    [Range(0f, 1f)] public float minHeight = 0.2f;
-    [Range(0f, 1f)] public float maxHeight = 0.8f;
-    [Range(0f, 60f)] public float maxSlope = 35f;
+    [Range(0f, 1f)] public float minHeight = 0.15f;
+    [Range(0f, 1f)] public float maxHeight = 0.9f;
+    [Range(0f, 60f)] public float maxSlope = 40f;
 
     [Header("Cluster Settings")]
-    public int clusterCount = 12;
-    public float clusterRadius = 40f;
-    [Range(0f, 1f)] public float clusterEdgeFalloff = 1f;
+    public int clusterCount = 14;
+    public float clusterRadius = 55f;
+    public float clusterEdgeFalloff = 0.8f;
 
-    [Header("Gameplay Safe Zones")]
+    [Header("Safe Zones")]
     public Vector3[] safeZoneCenters;
     public float safeZoneRadius = 15f;
 
-    [Header("Path / Road Safe Zones")]
+    [Header("Paths")]
     public Vector3[] pathPoints;
     public float pathRadius = 10f;
-
-    [Header("Performance")]
-    public Transform viewer;
-    public float maxSpawnDistance = 300f;
 
     private readonly System.Collections.Generic.List<Vector3> clusterCenters = new();
 
@@ -60,7 +70,6 @@ public class AutoForestGenerator : MonoBehaviour
     public void GenerateForest()
     {
         if (terrain == null) return;
-
         ClearForest();
 
         var data = terrain.terrainData;
@@ -69,13 +78,17 @@ public class AutoForestGenerator : MonoBehaviour
 
         GenerateClusterCenters(data, size, pos);
 
-        SpawnObjects(treePrefabs,
-            Mathf.RoundToInt(treeCount * treeSpawnMultiplier),
-            size, pos, data, false);
+        // 🌲 AĞAÇLAR
+        for (int p = 0; p < treeSpawnPasses; p++)
+            SpawnObjects(treePrefabs,
+                Mathf.RoundToInt(treeCount * treeSpawnMultiplier),
+                size, pos, data, false);
 
-        SpawnObjects(bushPrefabs,
-            Mathf.RoundToInt(bushCount * bushSpawnMultiplier),
-            size, pos, data, true);
+        // 🌿 ÇALILAR
+        for (int p = 0; p < bushSpawnPasses; p++)
+            SpawnObjects(bushPrefabs,
+                Mathf.RoundToInt(bushCount * bushSpawnMultiplier),
+                size, pos, data, true);
     }
 
     [ContextMenu("Clear Forest")]
@@ -90,7 +103,7 @@ public class AutoForestGenerator : MonoBehaviour
         clusterCenters.Clear();
         int safety = 0;
 
-        while (clusterCenters.Count < clusterCount && safety++ < clusterCount * 20)
+        while (clusterCenters.Count < clusterCount && safety++ < clusterCount * 30)
         {
             float x = Random.Range(0f, size.x);
             float z = Random.Range(0f, size.z);
@@ -125,6 +138,13 @@ public class AutoForestGenerator : MonoBehaviour
         return best;
     }
 
+    float GetHeightWeight(float h01)
+    {
+        float dist = Mathf.Abs(h01 - preferredHeightCenter);
+        float t = Mathf.Clamp01(dist / preferredHeightRange);
+        return 1f - t;
+    }
+
     void SpawnObjects(
         GameObject[] prefabs,
         int count,
@@ -133,8 +153,6 @@ public class AutoForestGenerator : MonoBehaviour
         TerrainData data,
         bool isBush)
     {
-        if (prefabs == null || prefabs.Length == 0) return;
-
         for (int i = 0; i < count; i++)
         {
             float x = Random.Range(0f, size.x);
@@ -143,28 +161,31 @@ public class AutoForestGenerator : MonoBehaviour
             float nx = x / size.x;
             float nz = z / size.z;
 
+            float h01 = data.GetInterpolatedHeight(nx, nz) / size.y;
+            if (h01 < minHeight || h01 > maxHeight) continue;
             if (data.GetSteepness(nx, nz) > maxSlope) continue;
 
-            Vector3 worldPos = new(
+            Vector3 p = new(
                 pos.x + x,
                 pos.y + data.GetInterpolatedHeight(nx, nz),
                 pos.z + z
             );
 
-            if (viewer && Vector3.Distance(viewer.position, worldPos) > maxSpawnDistance) continue;
-            if (IsInsideSafeZone(worldPos) || IsInsidePath(worldPos)) continue;
+            if (IsInsideSafeZone(p) || IsInsidePath(p)) continue;
 
-            float weight = GetClusterWeight(worldPos);
-            float finalWeight = Mathf.Max(
-                weight,
-                isBush ? minBushClusterWeight : minTreeClusterWeight
+            float weight =
+                (GetClusterWeight(p) * 0.7f) +
+                (GetHeightWeight(h01) * 0.7f);
+
+            float finalWeight = Mathf.Clamp01(
+                Mathf.Max(weight, isBush ? minBushClusterWeight : minTreeClusterWeight)
             );
 
             if (Random.value > finalWeight) continue;
 
             Instantiate(
                 prefabs[Random.Range(0, prefabs.Length)],
-                worldPos,
+                p,
                 Quaternion.Euler(0f, Random.Range(0f, 360f), 0f),
                 transform
             );

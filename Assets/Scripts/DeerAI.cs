@@ -1,10 +1,10 @@
-using System;
 using UnityEngine;
 using UnityEngine.AI;
 
+[RequireComponent(typeof(NavMeshAgent))]
 public class DeerAI : MonoBehaviour
 {
-    public float roamRadius = 40f;
+    public float roamRadius = 20f;
     public float roamDelay = 5f;
 
     private NavMeshAgent agent;
@@ -13,30 +13,50 @@ public class DeerAI : MonoBehaviour
     void Start()
     {
         agent = GetComponent<NavMeshAgent>();
+
+        if (!agent.isOnNavMesh)
+        {
+            UnityEngine.Debug.LogError("Agent NavMesh üzerinde deðil! Geyiði mavi alan üstüne koy.");
+            enabled = false; // Script durur ama geyik kaybolmaz
+            return;
+        }
+
         timer = roamDelay;
     }
 
     void Update()
     {
+        if (!agent.isOnNavMesh)
+            return;
+
         timer += Time.deltaTime;
 
         if (timer >= roamDelay)
         {
-            Vector3 newPos = RandomNavSphere(transform.position, roamRadius, -1);
-            agent.SetDestination(newPos);
-            timer = 0;
+            Vector3 newPos = GetRandomNavPoint(transform.position, roamRadius);
+
+            if (newPos != Vector3.zero)
+            {
+                agent.SetDestination(newPos);
+            }
+
+            timer = 0f;
         }
     }
 
-    public static Vector3 RandomNavSphere(Vector3 origin, float dist, int layermask)
+    Vector3 GetRandomNavPoint(Vector3 origin, float distance)
     {
-        Vector3 randDirection = Random.insideUnitSphere * dist;
-        randDirection += origin;
+        Vector3 randomDirection = UnityEngine.Random.insideUnitSphere * distance;
+        randomDirection.y = 0f;
+        randomDirection += origin;
 
-        NavMeshHit navHit;
+        NavMeshHit hit;
 
-        NavMesh.SamplePosition(randDirection, out navHit, dist, layermask);
+        if (NavMesh.SamplePosition(randomDirection, out hit, distance, NavMesh.AllAreas))
+        {
+            return hit.position;
+        }
 
-        return navHit.position;
+        return Vector3.zero;
     }
 }
